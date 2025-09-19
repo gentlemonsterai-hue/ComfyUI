@@ -1008,7 +1008,10 @@ class PromptServer():
     def has_save_image_node(self, prompt):
         """Check if the prompt contains any Save Image nodes"""
         for node_id, node_info in prompt.items():
-            if node_info.get("class_type") == "SaveImage":
+            class_type = node_info.get("class_type", "")
+            if ("SaveImage" in class_type or
+                "Save Image" in class_type or
+                class_type == "Save Image With Callback"):
                 return True
         return False
 

@@ -1133,11 +1133,18 @@ class PromptQueue:
             self.history[prompt[1]].update(history_result)
 
             # Trigger image cleanup for successful prompts only
+            prompt_id = prompt[1]
+            logging.info(f"Task done for prompt {prompt_id}, status: {status}")
+
             if status and status.status_str == 'success':
-                prompt_id = prompt[1]
                 if hasattr(self.server, 'pending_deletions') and prompt_id in self.server.pending_deletions:
+                    logging.info(f"Scheduling image cleanup for successful prompt {prompt_id}")
                     import asyncio
                     asyncio.create_task(self.server.delayed_image_cleanup(prompt_id))
+                else:
+                    logging.info(f"No pending deletions found for prompt {prompt_id}")
+            else:
+                logging.info(f"Skipping cleanup for prompt {prompt_id} - not successful or no status")
 
             self.server.queue_updated()
 
