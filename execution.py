@@ -1139,8 +1139,10 @@ class PromptQueue:
             if status and status.status_str == 'success':
                 if hasattr(self.server, 'pending_deletions') and prompt_id in self.server.pending_deletions:
                     logging.info(f"Scheduling image cleanup for successful prompt {prompt_id}")
-                    import asyncio
-                    asyncio.create_task(self.server.delayed_image_cleanup(prompt_id))
+                    # Schedule cleanup on the server's event loop from thread
+                    self.server.loop.call_soon_threadsafe(
+                        lambda: self.server.loop.create_task(self.server.delayed_image_cleanup(prompt_id))
+                    )
                 else:
                     logging.info(f"No pending deletions found for prompt {prompt_id}")
             else:
