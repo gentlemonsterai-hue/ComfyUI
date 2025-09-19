@@ -577,6 +577,11 @@ class PromptServer():
             }
             return web.json_response(system_stats)
 
+        @routes.get("/health")
+        async def get_health(request):
+            logging.info("Health check endpoint accessed")
+            return web.json_response({"status": "ok", "service": "comfyui"})
+
         @routes.get("/features")
         async def get_features(request):
             return web.json_response(feature_flags.get_server_features())
