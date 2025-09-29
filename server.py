@@ -1148,19 +1148,15 @@ class PromptServer():
 
     async def send_callback_notification(self, prompt_id, status, extra_data, error_details=None):
         """Send completion notification to callback URL if provided"""
-        logging.info(f"=========send_callback_notification {extra_data}=======")
-
         
         callback_data = extra_data.get("callback_data")
+
+        logging.info(f"========= callback_data : {callback_data} =======")
 
         if not callback_data:
             return
 
         callback_url = callback_data.get('callback_url')
-
-
-        logging.info(f"=========callback_url : {callback_url}=======")
-        logging.info(f"=========callback_data : {callback_data}=======")
 
         if not callback_url:
             return

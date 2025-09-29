@@ -1139,16 +1139,37 @@ class PromptQueue:
 
             # Send callback notification
             if status:
-                logging.info(f"=========Task done for prompt {status.status_str}, status: {status.messages}=======")
                 error_details = None
                 if status.status_str == 'error' and status.messages:
+                    # Filter error messages to include only execution_error with essential fields
+                    filtered_messages = []
+                    for message in status.messages:
+                        if isinstance(message, (list, tuple)) and len(message) >= 2:
+                            msg_type, msg_data = message[0], message[1]
+                            if msg_type == "execution_error" and isinstance(msg_data, dict):
+                                # Extract only essential error information that exists
+                                essential_error = {}
+
+                                # Only add fields that exist and are not None
+                                if msg_data.get("node_id") is not None:
+                                    essential_error["node_id"] = msg_data.get("node_id")
+                                if msg_data.get("node_type") is not None:
+                                    essential_error["node_type"] = msg_data.get("node_type")
+                                if msg_data.get("exception_message") is not None:
+                                    essential_error["exception_message"] = msg_data.get("exception_message")
+                                if msg_data.get("exception_type") is not None:
+                                    essential_error["exception_type"] = msg_data.get("exception_type")
+                                if msg_data.get("current_inputs") is not None:
+                                    essential_error["current_inputs"] = msg_data.get("current_inputs")
+
+                                filtered_messages.append(["execution_error", essential_error])
+
                     error_details = {
-                        "messages": status.messages,
+                        "messages": filtered_messages,
                         "details": "Execution failed during processing"
                     }
 
                 # Schedule callback on the server's event loop
-                logging.info(f"=========Schedule callback on the server's event loop=======")
                 self.server.loop.call_soon_threadsafe(
                     lambda: self.server.loop.create_task(
                         self.server.send_callback_notification(prompt_id, status.status_str, extra_data, error_details)
