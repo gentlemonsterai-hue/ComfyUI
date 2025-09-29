@@ -1109,6 +1109,33 @@ class PromptQueue:
         completed: bool
         messages: List[str]
 
+    def _extract_error_details(self, status):
+        """Extract essential error information from execution status"""
+        if not status or status.status_str != 'error' or not status.messages:
+            return None
+
+        # Find execution_error message and extract essential fields directly
+        error_details = {"details": "Execution failed during processing"}
+
+        for message in status.messages:
+            if isinstance(message, (list, tuple)) and len(message) >= 2:
+                msg_type, msg_data = message[0], message[1]
+                if msg_type == "execution_error" and isinstance(msg_data, dict):
+                    # Add essential error fields directly to error_details
+                    if msg_data.get("node_id") is not None:
+                        error_details["node_id"] = msg_data.get("node_id")
+                    if msg_data.get("node_type") is not None:
+                        error_details["node_type"] = msg_data.get("node_type")
+                    if msg_data.get("exception_message") is not None:
+                        error_details["exception_message"] = msg_data.get("exception_message")
+                    if msg_data.get("exception_type") is not None:
+                        error_details["exception_type"] = msg_data.get("exception_type")
+                    if msg_data.get("current_inputs") is not None:
+                        error_details["current_inputs"] = msg_data.get("current_inputs")
+                    break  # Use first execution_error found
+
+        return error_details
+
     def task_done(self, item_id, history_result,
                   status: Optional['PromptQueue.ExecutionStatus']):
         with self.mutex:
@@ -1139,35 +1166,7 @@ class PromptQueue:
 
             # Send callback notification
             if status:
-                error_details = None
-                if status.status_str == 'error' and status.messages:
-                    # Filter error messages to include only execution_error with essential fields
-                    filtered_messages = []
-                    for message in status.messages:
-                        if isinstance(message, (list, tuple)) and len(message) >= 2:
-                            msg_type, msg_data = message[0], message[1]
-                            if msg_type == "execution_error" and isinstance(msg_data, dict):
-                                # Extract only essential error information that exists
-                                essential_error = {}
-
-                                # Only add fields that exist and are not None
-                                if msg_data.get("node_id") is not None:
-                                    essential_error["node_id"] = msg_data.get("node_id")
-                                if msg_data.get("node_type") is not None:
-                                    essential_error["node_type"] = msg_data.get("node_type")
-                                if msg_data.get("exception_message") is not None:
-                                    essential_error["exception_message"] = msg_data.get("exception_message")
-                                if msg_data.get("exception_type") is not None:
-                                    essential_error["exception_type"] = msg_data.get("exception_type")
-                                if msg_data.get("current_inputs") is not None:
-                                    essential_error["current_inputs"] = msg_data.get("current_inputs")
-
-                                filtered_messages.append(["execution_error", essential_error])
-
-                    error_details = {
-                        "messages": filtered_messages,
-                        "details": "Execution failed during processing"
-                    }
+                error_details = self._extract_error_details(status)
 
                 # Schedule callback on the server's event loop
                 self.server.loop.call_soon_threadsafe(
