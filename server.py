@@ -2,6 +2,7 @@ import os
 import sys
 import asyncio
 import traceback
+import time
 
 import nodes
 import folder_paths
@@ -581,7 +582,7 @@ class PromptServer():
         @routes.get("/health")
         async def get_health(request):
             logging.info("Health check endpoint accessed")
-            return web.json_response({"status": "ok", "service": "comfyui"})
+            return web.json_response({"status": "ok", "service": "comfyui-v2"})
 
         @routes.get("/features")
         async def get_features(request):
@@ -697,6 +698,10 @@ class PromptServer():
 
                 if "client_id" in json_data:
                     extra_data["client_id"] = json_data["client_id"]
+                if "callback_data" in json_data:
+                    # callback_url 과 콜백에 보낼 데이터 포함
+                    callback_data = json_data["callback_data"]
+                    extra_data["callback_data"] = callback_data
                 if valid[0]:
                     outputs_to_execute = valid[2]
 
@@ -732,6 +737,20 @@ class PromptServer():
                     self.prompt_queue.delete_queue_item(delete_func)
 
             return web.Response(status=200)
+
+        @routes.delete("/queue/{prompt_id}")
+        async def delete_queue_job(request):
+            prompt_id = request.match_info.get("prompt_id", None)
+            if prompt_id is None:
+                return web.Response(status=400)
+
+            delete_func = lambda a: a[1] == prompt_id
+            deleted = self.prompt_queue.delete_queue_item(delete_func)
+
+            if deleted:
+                return web.json_response({"success": True, "prompt_id": prompt_id})
+            else:
+                return web.json_response({"success": False, "prompt_id": prompt_id, "error": "Job not found"}, status=404)
 
         @routes.post("/interrupt")
         async def post_interrupt(request):
@@ -1126,3 +1145,64 @@ class PromptServer():
         message = struct.pack(">I", len(node_id_bytes)) + node_id_bytes + text
 
         self.send_sync(BinaryEventTypes.TEXT, message, sid)
+
+    async def send_callback_notification(self, prompt_id, status, extra_data, error_details=None):
+        """Send completion notification to callback URL if provided"""
+        logging.info(f"=========send_callback_notification {extra_data}=======")
+
+        
+        callback_data = extra_data.get("callback_data")
+
+        if not callback_data:
+            return
+
+        callback_url = callback_data.get('callback_url')
+
+
+        logging.info(f"=========callback_url : {callback_url}=======")
+        logging.info(f"=========callback_data : {callback_data}=======")
+
+        if not callback_url:
+            return
+
+        try:
+            payload = {
+                "prompt_id": prompt_id,
+                "status": status,
+                "timestamp": time.time()
+            }
+            if error_details:
+                payload["error"] = error_details
+
+            # Include original callback_data if present
+            if callback_data:
+                payload["callback_data"] = callback_data
+
+            # Create SSL context with proper certificate handling
+            ssl_context = ssl.create_default_context()
+
+            # Try to load system certificates
+            try:
+                import certifi
+                ssl_context.load_verify_locations(certifi.where())
+            except ImportError:
+                # fallback to system default if certifi not available
+                logging.warning("certifi not found, using system SSL certificates")
+            except Exception as e:
+                logging.warning(f"Could not load SSL certificates: {e}")
+                # Only disable SSL verification as last resort
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+
+            connector = aiohttp.TCPConnector(ssl=ssl_context)
+            async with aiohttp.ClientSession(connector=connector) as session:
+                logging.info(f"Sending callback payload: {payload}")
+                async with session.post(callback_url, json=payload) as response:
+                    response_text = await response.text()
+                    logging.info(f"Callback response status: {response.status}, body: {response_text}")
+                    if response.status == 200:
+                        logging.info(f"Callback sent successfully for prompt {prompt_id}")
+                    else:
+                        logging.warning(f"Callback failed for prompt {prompt_id}: HTTP {response.status}")
+        except Exception as e:
+            logging.error(f"Failed to send callback for prompt {prompt_id}: {e}")

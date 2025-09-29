@@ -1134,7 +1134,26 @@ class PromptQueue:
 
             # Trigger image cleanup for successful prompts only
             prompt_id = prompt[1]
+            extra_data = prompt[3]
             logging.info(f"Task done for prompt {prompt_id}, status: {status}")
+
+            # Send callback notification
+            if status:
+                logging.info(f"=========Task done for prompt {status.status_str}, status: {status.messages}=======")
+                error_details = None
+                if status.status_str == 'error' and status.messages:
+                    error_details = {
+                        "messages": status.messages,
+                        "details": "Execution failed during processing"
+                    }
+
+                # Schedule callback on the server's event loop
+                logging.info(f"=========Schedule callback on the server's event loop=======")
+                self.server.loop.call_soon_threadsafe(
+                    lambda: self.server.loop.create_task(
+                        self.server.send_callback_notification(prompt_id, status.status_str, extra_data, error_details)
+                    )
+                )
 
             if status and status.status_str == 'success':
                 if hasattr(self.server, 'pending_deletions') and prompt_id in self.server.pending_deletions:

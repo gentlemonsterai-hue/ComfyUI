@@ -1,7 +1,48 @@
 <div align="center">
 
-# ComfyUI
+# ComfyUI - HAUS Custom Fork
 **The most powerful and modular visual AI engine and application.**
+
+## 🚀 HAUS TRY ON Service Customizations
+
+> **This is a custom fork of ComfyUI optimized for HAUS TRY ON service**
+
+### ✨ Key Modifications
+
+1. **🖥️ CPU-Optimized Operation**
+   - Configured for CPU-only execution mode for HAUS TRY ON service
+   - Optimized for server environments without GPU requirements
+
+2. **🔔 Webhook Notification System**
+   - Added automatic webhook callbacks on task completion/failure
+   - Real-time status updates sent to specified callback URLs
+   - Enhanced workflow integration with external services
+
+### 📡 Webhook Feature Usage
+```json
+POST /prompt
+{
+  "prompt": { ... },
+  "callback_data": {
+    "callback_url": "https://your-service.com/webhook",
+    "resultUrl": "custom-result-url",
+    "customField": "value"
+  }
+}
+```
+
+**Callback Response:**
+```json
+{
+  "prompt_id": "unique-id",
+  "status": "success|error",
+  "timestamp": 1640995200.0,
+  "callback_data": { /* original callback_data */ },
+  "error": { /* error details if failed */ }
+}
+```
+
+---
 
 
 [![Website][website-shield]][website-url]
