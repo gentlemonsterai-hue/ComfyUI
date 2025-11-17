@@ -1,5 +1,3 @@
-<div align="center">
-
 # ComfyUI - HAUS Custom Fork
 **The most powerful and modular visual AI engine and application.**
 
@@ -13,37 +11,121 @@
    - Configured for CPU-only execution mode for HAUS TRY ON service
    - Optimized for server environments without GPU requirements
 
-2. **🔔 Webhook Notification System**
-   - Added automatic webhook callbacks on task completion/failure
-   - Real-time status updates sent to specified callback URLs
-   - Enhanced workflow integration with external services
+2. **⚡ Synchronous Execution Model**
+   - Modified to use synchronous HTTP request/response instead of async queue
+   - POST /prompt waits until image generation completes before returning
+   - Direct response with results - no callbacks needed
+   - Sequential execution with lock prevents concurrent requests
 
-### 📡 Webhook Feature Usage
+## 🚀 Getting Started
+
+### Local Development Setup
+
+```bash
+# 1. Clone the repository
+git clone <repository-url>
+cd ComfyUI
+
+# 2. Create and activate virtual environment
+python -m venv venv
+source venv/bin/activate  # macOS/Linux
+# venv\Scripts\activate    # Windows
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Run the application
+python main.py --port 8188
+
+# 5. Access the web interface
+# Open browser: http://127.0.0.1:8188
+```
+
+**Common Run Options:**
+```bash
+# Run on specific port
+python main.py --port 8000
+
+# Run with external access
+python main.py --listen 0.0.0.0 --port 8188
+
+# Run in CPU-only mode
+python main.py --cpu
+
+# Run with preview enabled
+python main.py --preview-method auto
+```
+
+### 📡 API Usage
+
+**Request:**
 ```json
 POST /prompt
 {
-  "prompt": { ... },
+  "prompt": { /* ComfyUI workflow JSON */ },
   "callback_data": {
-    "callback_url": "https://your-service.com/webhook",
-    "resultUrl": "custom-result-url",
-    "customField": "value"
+    "resultUrl": "my-custom-url",
+    "customField": "custom-value"
   }
 }
 ```
 
-**Callback Response:**
+**Response (Success):**
 ```json
 {
-  "prompt_id": "unique-id",
-  "status": "success|error",
-  "timestamp": 1640995200.0,
-  "callback_data": { /* original callback_data */ },
-  "error": { /* error details if failed */ }
+  "prompt_id": "5d9c2688-fc64-4071-a6dc-16845c32bfab",
+  "number": 1,
+  "status": "success",
+  "outputs": {
+    "2": {
+      "images": [
+        {
+          "filename": "ComfyUI_temp_00002_.png",
+          "subfolder": "",
+          "type": "temp"
+        }
+      ]
+    }
+  },
+  "callback_data": {
+    "resultUrl": "my-custom-url",
+    "customField": "custom-value"
+  },
+  "node_errors": {}
 }
 ```
 
----
+**Response (Error):**
+```json
+{
+  "prompt_id": "5d9c2688-fc64-4071-a6dc-16845c32bfab",
+  "number": 1,
+  "status": "error",
+  "outputs": {},
+  "callback_data": {
+    "resultUrl": "my-custom-url",
+    "customField": "custom-value"
+  },
+  "node_errors": {},
+  "errors": [
+    {
+      "node_id": "123",
+      "node_type": "SaveImage",
+      "exception_message": "Error details...",
+      "exception_type": "RuntimeError"
+    }
+  ]
+}
+```
 
+**Important Notes:**
+- **Synchronous execution**: Request waits until image generation completes
+- **Sequential processing**: One request at a time (protected by execution lock)
+- **No timeout**: Server waits indefinitely until completion
+- **callback_data passthrough**: Any data sent in `callback_data` is returned as-is in the response
+- **Legacy callback system removed**: No webhook notifications, results returned directly
+
+---
 
 [![Website][website-shield]][website-url]
 [![Dynamic JSON Badge][discord-shield]][discord-url]
@@ -73,7 +155,6 @@ POST /prompt
 [github-downloads-link]: https://github.com/comfyanonymous/ComfyUI/releases
 
 ![ComfyUI Screenshot](https://github.com/user-attachments/assets/7ccaf2c1-9b72-41ae-9a89-5688c94b7abe)
-</div>
 
 ComfyUI lets you design and execute advanced stable diffusion pipelines using a graph/nodes/flowchart based interface. Available on Windows, Linux, and macOS.
 

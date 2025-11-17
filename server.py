@@ -187,6 +187,10 @@ class PromptServer():
         self.on_prompt_handlers = []
         self.pending_deletions = {}  # prompt_id -> (files_to_delete, timestamp)
 
+        # Synchronous execution support
+        self.execution_lock = asyncio.Lock()
+        self.executor = None  # Will be initialized in setup()
+
         @routes.get('/ws')
         async def websocket_handler(request):
             ws = web.WebSocketResponse()
@@ -670,6 +674,10 @@ class PromptServer():
         @routes.post("/prompt")
         async def post_prompt(request):
             logging.info("got prompt")
+
+            # Disable request timeout for long-running image generation
+            request._read_timeout = None
+
             json_data =  await request.json()
             json_data = self.trigger_on_prompt(json_data)
 
@@ -698,20 +706,57 @@ class PromptServer():
 
                 if "client_id" in json_data:
                     extra_data["client_id"] = json_data["client_id"]
-                if "callback_data" in json_data:
-                    # callback_url 과 콜백에 보낼 데이터 포함
-                    callback_data = json_data["callback_data"]
-                    extra_data["callback_data"] = callback_data
+
                 if valid[0]:
                     outputs_to_execute = valid[2]
 
-                    # Check if prompt contains Save Image node and schedule deletion
-                    if self.has_save_image_node(prompt):
-                        self.schedule_image_deletion(prompt_id)
+                    # Execute synchronously - one request at a time
+                    async with self.execution_lock:
+                        logging.info(f"Starting synchronous execution for prompt {prompt_id}")
+                        execution_start_time = time.time()
 
-                    self.prompt_queue.put((number, prompt_id, prompt, extra_data, outputs_to_execute))
-                    response = {"prompt_id": prompt_id, "number": number, "node_errors": valid[3]}
-                    return web.json_response(response)
+                        # Execute the prompt directly
+                        await self.executor.execute_async(prompt, prompt_id, extra_data, outputs_to_execute)
+
+                        execution_time = time.time() - execution_start_time
+
+                        # Log execution time
+                        if execution_time > 600:
+                            execution_time_str = time.strftime("%H:%M:%S", time.gmtime(execution_time))
+                            logging.info(f"Prompt executed in {execution_time_str}")
+                        else:
+                            logging.info(f"Prompt executed in {execution_time:.2f} seconds")
+
+                        # Return result immediately
+                        response = {
+                            "prompt_id": prompt_id,
+                            "number": number,
+                            "status": "success" if self.executor.success else "error",
+                            "outputs": self.executor.history_result.get("outputs", {}),
+                            "node_errors": valid[3]
+                        }
+
+                        # Include callback_data if provided (for client to get their data back)
+                        callback_data = json_data.get("callback_data")
+                        if callback_data:
+                            response["callback_data"] = callback_data
+
+                        # Add error details if execution failed
+                        if not self.executor.success:
+                            error_messages = []
+                            for event, data in self.executor.status_messages:
+                                if event == "execution_error":
+                                    error_messages.append({
+                                        "node_id": data.get("node_id"),
+                                        "node_type": data.get("node_type"),
+                                        "exception_message": data.get("exception_message"),
+                                        "exception_type": data.get("exception_type")
+                                    })
+                            if error_messages:
+                                response["errors"] = error_messages
+
+                        logging.info(f"Returning response for prompt {prompt_id}: status={response['status']}")
+                        return web.json_response(response)
                 else:
                     logging.warning("invalid prompt: {}".format(valid[1]))
                     return web.json_response({"error": valid[1], "node_errors": valid[3]}, status=400)
@@ -811,6 +856,15 @@ class PromptServer():
     async def setup(self):
         timeout = aiohttp.ClientTimeout(total=None) # no timeout
         self.client_session = aiohttp.ClientSession(timeout=timeout)
+
+        # Initialize executor for synchronous execution
+        from comfy.cli_args import args
+        cache_type = execution.CacheType.CLASSIC
+        if args.cache_lru > 0:
+            cache_type = execution.CacheType.LRU
+        elif args.cache_none:
+            cache_type = execution.CacheType.DEPENDENCY_AWARE
+        self.executor = execution.PromptExecutor(self, cache_type=cache_type, cache_size=args.cache_lru)
 
     def add_routes(self):
         self.user_manager.add_routes(self.routes)
@@ -1147,8 +1201,16 @@ class PromptServer():
         self.send_sync(BinaryEventTypes.TEXT, message, sid)
 
     async def send_callback_notification(self, prompt_id, status, extra_data, error_details=None):
-        """Send completion notification to callback URL if provided"""
-        
+        """
+        DEPRECATED: Callback notifications removed in favor of synchronous execution.
+        This method is kept for backward compatibility but does nothing.
+        Results are now returned directly in the POST /prompt response.
+        """
+        logging.debug(f"send_callback_notification called for {prompt_id} but ignored (using synchronous execution)")
+        return
+
+    async def _legacy_send_callback_notification(self, prompt_id, status, extra_data, error_details=None):
+        """Legacy callback notification implementation - kept for reference"""
         callback_data = extra_data.get("callback_data")
 
         logging.info(f"========= callback_data : {callback_data} =======")

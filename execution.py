@@ -1159,33 +1159,10 @@ class PromptQueue:
             }
             self.history[prompt[1]].update(history_result)
 
-            # Trigger image cleanup for successful prompts only
+            # Note: Callback notification and image cleanup removed
+            # Now using synchronous execution model - results returned directly via HTTP response
             prompt_id = prompt[1]
-            extra_data = prompt[3]
             logging.info(f"Task done for prompt {prompt_id}, status: {status}")
-
-            # Send callback notification
-            if status:
-                error_details = self._extract_error_details(status)
-
-                # Schedule callback on the server's event loop
-                self.server.loop.call_soon_threadsafe(
-                    lambda: self.server.loop.create_task(
-                        self.server.send_callback_notification(prompt_id, status.status_str, extra_data, error_details)
-                    )
-                )
-
-            if status and status.status_str == 'success':
-                if hasattr(self.server, 'pending_deletions') and prompt_id in self.server.pending_deletions:
-                    logging.info(f"Scheduling image cleanup for successful prompt {prompt_id}")
-                    # Schedule cleanup on the server's event loop from thread
-                    self.server.loop.call_soon_threadsafe(
-                        lambda: self.server.loop.create_task(self.server.delayed_image_cleanup(prompt_id))
-                    )
-                else:
-                    logging.info(f"No pending deletions found for prompt {prompt_id}")
-            else:
-                logging.info(f"Skipping cleanup for prompt {prompt_id} - not successful or no status")
 
             self.server.queue_updated()
 
